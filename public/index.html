@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SENTINEL — Situational Awareness Dashboard</title>
+  <meta name="description" content="Real-time situational awareness dashboard tracking news, weather, traffic, radiation, AQI, and earthquakes for any location." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- Leaflet.js for interactive map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-brand">
+    <div class="brand-icon">🛰️</div>
+    <div class="brand-text">
+      <span class="brand-name">SENTINEL</span>
+      <span class="brand-sub">Situational Awareness System</span>
+    </div>
+  </div>
+
+  <div class="header-controls">
+    <div class="input-group">
+      <div class="input-icon">📍</div>
+      <input type="text" id="locationInput" class="input-field" placeholder="Enter location (e.g. Mumbai, India)" autocomplete="off" />
+      <div class="input-suggestions" id="locationSuggestions"></div>
+    </div>
+    <div class="input-group slim">
+      <div class="input-icon">🕒</div>
+      <select id="timelineSelect" class="input-field select-field">
+        <option value="1h">Last 1h</option>
+        <option value="6h">Last 6h</option>
+        <option value="24h" selected>Last 24h</option>
+        <option value="7d">Last 7d</option>
+      </select>
+    </div>
+    <button id="monitorBtn" class="btn-monitor" onclick="startMonitor()">
+      <span class="btn-icon">⚡</span> MONITOR
+    </button>
+    <button class="btn-secondary" onclick="exportReport()" title="Export situation report">
+      📤 Export
+    </button>
+  </div>
+
+  <div class="header-status">
+    <!-- Threat Level Widget -->
+    <div class="threat-widget" id="threatWidget" style="display:none">
+      <div class="threat-label">THREAT LEVEL</div>
+      <div class="threat-level-bar">
+        <div class="threat-fill" id="threatFill"></div>
+      </div>
+      <div class="threat-text" id="threatText">—</div>
+    </div>
+    <div id="liveIndicator" class="status-indicator offline">
+      <span class="status-dot"></span>
+      <span class="status-text">OFFLINE</span>
+    </div>
+    <div class="clock" id="clockDisplay"></div>
+  </div>
+</header>
+
+<!-- ── Alert Ticker ─────────────────────────────────────────────────────────── -->
+<div class="alert-ticker-wrap" id="alertTickerWrap">
+  <div class="ticker-label">⚠ LIVE ALERTS</div>
+  <div class="ticker-track" id="alertTicker">
+    <div class="ticker-item placeholder">No active alerts — system monitoring</div>
+  </div>
+</div>
+
+<!-- ── Main Layout ──────────────────────────────────────────────────────────── -->
+<main class="main-layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span class="section-icon">🔔</span>
+        <span>Alert Log</span>
+        <span class="badge" id="unreadBadge" style="display:none"></span>
+      </div>
+      <div class="alert-log" id="alertLog">
+        <div class="empty-state">No alerts yet</div>
+      </div>
+      <button class="btn-sm" onclick="markAllRead()" style="margin-top:8px">Mark all read</button>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span class="section-icon">📍</span>
+        <span>Location History</span>
+      </div>
+      <div class="location-list" id="locationList">
+        <div class="empty-state">No history yet</div>
+      </div>
+    </div>
+
+    <!-- Custom Keywords -->
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span class="section-icon">🔍</span>
+        <span>Custom Keywords</span>
+      </div>
+      <div class="keyword-input-row">
+        <input type="text" id="keywordInput" class="input-field" placeholder="e.g. pipeline, minister..." style="width:100%;padding-left:10px" />
+        <button class="btn-add-kw" onclick="addKeyword()">+</button>
+      </div>
+      <div class="keyword-chips" id="keywordChips"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="section-header">
+        <span class="section-icon">⚙️</span>
+        <span>Settings</span>
+      </div>
+      <div class="settings-row">
+        <label class="setting-label">Browser Notifications</label>
+        <button class="btn-toggle" id="notifToggle" onclick="toggleNotifications()">Enable</button>
+      </div>
+      <div class="settings-row">
+        <label class="setting-label">Auto-poll interval</label>
+        <select class="input-field select-field" id="pollInterval" onchange="updatePollInterval()">
+          <option value="60000">1 min</option>
+          <option value="300000" selected>5 min</option>
+          <option value="600000">10 min</option>
+          <option value="0">Manual</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label class="setting-label">Map View</label>
+        <button class="btn-toggle" id="mapToggle" onclick="toggleMap()">Show</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Dashboard Grid -->
+  <div class="dashboard-grid" id="dashboardGrid">
+
+    <!-- Welcome state -->
+    <div class="welcome-panel" id="welcomePanel">
+      <div class="welcome-icon">🛰️</div>
+      <h2 class="welcome-title">SENTINEL Online</h2>
+      <p class="welcome-sub">Enter a location above and click <strong>MONITOR</strong> to begin multi-feed situational awareness tracking.</p>
+      <div class="welcome-features">
+        <div class="feature-chip">📰 High-Intensity News</div>
+        <div class="feature-chip">🌤 Weather Monitoring</div>
+        <div class="feature-chip">🚦 Traffic Intelligence</div>
+        <div class="feature-chip">☢️ Radiation Levels</div>
+        <div class="feature-chip">🌍 Air Quality Index</div>
+        <div class="feature-chip">🌊 Earthquake Monitor</div>
+        <div class="feature-chip">🗺️ Interactive Map</div>
+        <div class="feature-chip">🎯 Composite Threat Level</div>
+        <div class="feature-chip">🔍 Custom Keywords</div>
+        <div class="feature-chip">📤 Report Export</div>
+      </div>
+    </div>
+
+    <!-- Interactive Map Panel (hidden by default, above grid) -->
+    <div class="panel map-panel" id="mapPanel" style="display:none;grid-column:1/-1">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">🗺️</span>
+          <span>Interactive Situation Map</span>
+          <span class="panel-badge" id="mapBadge" style="display:none"></span>
+        </div>
+        <div class="panel-meta" id="mapMeta">Pinch/scroll to zoom</div>
+      </div>
+      <div id="leafletMap" style="height:280px;background:#0d1420;border-radius:0 0 12px 12px"></div>
+    </div>
+
+    <!-- News Panel -->
+    <div class="panel" id="newsPanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">📰</span>
+          <span>News Intelligence</span>
+          <span class="panel-badge" id="newsBadge" style="display:none"></span>
+        </div>
+        <div class="panel-meta" id="newsMeta"></div>
+      </div>
+      <div class="panel-filter-row">
+        <button class="filter-btn active" onclick="filterNews('all', this)">All</button>
+        <button class="filter-btn" onclick="filterNews('civil_unrest', this)">Civil Unrest</button>
+        <button class="filter-btn" onclick="filterNews('vip_movement', this)">VIP</button>
+        <button class="filter-btn" onclick="filterNews('emergency', this)">Emergency</button>
+        <button class="filter-btn" onclick="filterNews('traffic', this)">Traffic</button>
+      </div>
+      <div class="news-list" id="newsList"></div>
+    </div>
+
+    <!-- Weather Panel -->
+    <div class="panel" id="weatherPanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">🌤</span>
+          <span>Weather Monitor</span>
+        </div>
+        <div class="panel-meta" id="weatherMeta"></div>
+      </div>
+      <div class="weather-current" id="weatherCurrent"></div>
+      <div class="weather-alerts" id="weatherAlerts"></div>
+      <div class="weather-forecast" id="weatherForecast"></div>
+    </div>
+
+    <!-- Traffic Panel -->
+    <div class="panel" id="trafficPanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">🚦</span>
+          <span>Traffic Intelligence</span>
+          <span class="anomaly-indicator" id="trafficAnomaly" style="display:none">⚠ ANOMALY</span>
+        </div>
+        <div class="panel-meta" id="trafficMeta"></div>
+      </div>
+      <div class="traffic-score-row" id="trafficScoreRow"></div>
+      <div class="traffic-anomaly-banner" id="trafficAnomalyBanner" style="display:none"></div>
+      <div class="incident-list" id="incidentList"></div>
+    </div>
+
+    <!-- Radiation Panel -->
+    <div class="panel" id="radiationPanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">☢️</span>
+          <span>Radiation Monitor</span>
+          <span class="data-quality-tag" id="radiationQuality"></span>
+        </div>
+        <div class="panel-meta" id="radiationMeta"></div>
+      </div>
+      <div class="radiation-primary" id="radiationPrimary"></div>
+      <div class="radiation-neighbors" id="radiationNeighbors"></div>
+    </div>
+
+    <!-- AQI Panel (NEW) -->
+    <div class="panel" id="aqiPanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">🌍</span>
+          <span>Air Quality Index</span>
+          <span class="panel-badge" id="aqiBadge" style="display:none"></span>
+        </div>
+        <div class="panel-meta" id="aqiMeta"></div>
+      </div>
+      <div class="aqi-main" id="aqiMain"></div>
+      <div class="aqi-pollutants" id="aqiPollutants"></div>
+    </div>
+
+    <!-- Earthquake Panel (NEW) -->
+    <div class="panel" id="earthquakePanel" style="display:none">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span class="panel-icon">🌊</span>
+          <span>Seismic Activity</span>
+          <span class="panel-badge" id="eqBadge" style="display:none"></span>
+        </div>
+        <div class="panel-meta" id="eqMeta"></div>
+      </div>
+      <div class="earthquake-list" id="earthquakeList"></div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ── Loading overlay ──────────────────────────────────────────────────────── -->
+<div class="loading-overlay" id="loadingOverlay" style="display:none">
+  <div class="loading-content">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">ACQUIRING DATA</div>
+    <div class="loading-sub" id="loadingSub">Connecting to intelligence feeds...</div>
+  </div>
+</div>
+
+<!-- ── Toast container ──────────────────────────────────────────────────────── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
